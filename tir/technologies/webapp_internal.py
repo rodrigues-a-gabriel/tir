@@ -2798,24 +2798,52 @@ class WebappInternal(Base):
         sel_browse_icon = lambda: self.driver.find_element(By.XPATH, xpath_soup(search_elements[2]))
         sel_browse_input_filled = False
 
-        if self.webapp_shadowroot():
-            input_lenght = ''
-            endtime = time.time() + self.config.time_out
-            while time.time() < endtime and not input_lenght:
+        def get_max_length():
+            # Under shadowroot the length is kept by the wa-tget component, otherwise by the input itself
+            script = ("return arguments[0]._maxLength" if self.webapp_shadowroot()
+                      else "return arguments[0].maxLength")
+            try:
+                max_length = self.driver.execute_script(script, sel_browse_input())
+                return int(max_length) if max_length and int(max_length) > 0 else None
+            except:
+                return None
+
+        # An input without limit returns -1, so only the shadowroot component is awaited
+        max_length = get_max_length()
+        endtime = time.time() + 5
+        while self.webapp_shadowroot() and time.time() < endtime and not max_length:
+            max_length = get_max_length()
+            if not max_length:
+                time.sleep(0.5)
+
+        # Fills only what fits in the input, otherwise the typed value is truncated
+        # by the component and never matches the term, refilling it over and over
+        search_term = term.strip()
+        if max_length and len(search_term) > max_length:
+            logger().warning(f"Browse term '{search_term}' exceeds input length {max_length}. Filling '{search_term[:max_length]}'")
+            search_term = search_term[:max_length]
+
+        def get_input_value():
+            # Under shadowroot the inner input holds the typed value immediately,
+            # while the wa-tget value property may be updated only later
+            value = None
+            if self.webapp_shadowroot():
                 try:
-                    input_lenght = self.driver.execute_script('return arguments[0]._maxLength', sel_browse_input())
+                    value = self.driver.execute_script(
+                        "return arguments[0].shadowRoot ? arguments[0].shadowRoot.querySelector('input').value : null",
+                        sel_browse_input())
                 except:
-                    pass
+                    value = None
+            if value is None:
+                value = self.get_element_value(sel_browse_input())
+            return value or ''
 
-            if len(term.strip()) > input_lenght:
-                self.log_error(f"Browse term length exceeded input lenght: {input_lenght}")
-
-        current_value = self.get_element_value(sel_browse_input()) or ''
+        current_value = get_input_value()
 
         # Column search may apply the column picture (uppercase, masks, padding) to the typed value,
         # so the comparison must be normalized or the input is refilled until timeout.
         normalize = lambda value: re.sub(r'\s', '', self.remove_mask(value.strip())).lower() if value else ''
-        is_filled = lambda: normalize(current_value) == normalize(term)
+        is_filled = lambda: normalize(current_value) == normalize(search_term)
 
         max_attempts = 3
         attempt = 0
@@ -2824,7 +2852,7 @@ class WebappInternal(Base):
             attempt += 1
             try:
                 self.wait_blocker()
-                logger().info(f'Filling: {term}')
+                logger().info(f'Filling: {search_term}')
                 self.wait_until_to( expected_condition = "element_to_be_clickable", element = search_elements[2], locator = By.XPATH, timeout=True)
                 self.click(sel_browse_input())
                 self.set_element_focus(sel_browse_input())
@@ -2840,17 +2868,25 @@ class WebappInternal(Base):
                     Keys.END).key_up(Keys.CONTROL).key_up(Keys.SHIFT).perform()
                 self.send_keys(sel_browse_input(), Keys.DELETE)
                 self.wait_until_to( expected_condition = "element_to_be_clickable", element = search_elements[1], locator = By.XPATH, timeout=True)
-                sel_browse_input().send_keys(term.strip())
-                time.sleep(1)
-                current_value = self.get_element_value(sel_browse_input()) or ''
+                sel_browse_input().send_keys(search_term)
                 sel_browse_input_filled = True
+
+                # Waits the typed value to be reflected before trying to fill it again
+                value_endtime = time.time() + 3
+                current_value = get_input_value()
+                while time.time() < value_endtime and not is_filled():
+                    time.sleep(0.5)
+                    current_value = get_input_value()
+
+                if not is_filled():
+                    logger().debug(f"fill_search_browse: attempt {attempt} expected='{search_term}' current='{current_value}'")
             except StaleElementReferenceException:
                     self.get_search_browse_elements()
-            except:
-                pass
+            except Exception as e:
+                logger().debug(f"fill_search_browse: attempt {attempt} exception - {str(e)}")
         if not is_filled():
             self.log_error(
-                f"Couldn't fill browse search input. expected='{term.strip()}' current='{current_value.rstrip()}'"
+                f"Couldn't fill browse search input. expected='{search_term}' current='{current_value.rstrip()}'"
             )
         if sel_browse_input_filled:
             self.send_keys(sel_browse_input(), Keys.ENTER)
