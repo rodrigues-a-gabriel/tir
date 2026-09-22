@@ -3529,6 +3529,12 @@ class WebappInternal(Base):
                 if valtype == 'D' and user_value_size > interface_value_size:
                     main_value_bkp = main_value
                     main_value = value[0:6] + value[8:10]
+                elif (valtype not in ('D', 'N') and not self.check_combobox(element)
+                      and isinstance(interface_value_size, int) and 0 < interface_value_size < len(main_value)):
+                    # Fills only what fits in the input, otherwise the typed value is truncated
+                    # by the component and never matches the value, refilling it until timeout
+                    logger().warning(f"Value '{main_value}' exceeds field {field} length {interface_value_size}. Filling '{main_value[:interface_value_size]}'")
+                    main_value = main_value[:interface_value_size]
 
                 if self.element_name(element) == "input":
                     valtype = self.value_type(element.attrs["type"])
