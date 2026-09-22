@@ -3493,6 +3493,7 @@ class WebappInternal(Base):
                 logger().info(f"Container blocked! Element is displayed?: {self.element_is_displayed(element)}")
 
             if not container_is_blocked and not self.element_is_displayed(element):
+                logger().debug(f"Element {field} is not displayed")
                 continue
 
             main_element = element
@@ -3617,7 +3618,12 @@ class WebappInternal(Base):
                         success = re.sub(replace, '', current_value).lower() == re.sub(replace, '', main_value).lower()
                     else:
                         success = current_value == main_value.replace(",", "").strip()
-                except:
+
+                    if not success:
+                        logger().debug(f"Field {field} value '{current_value}' differs from '{main_value}' (max length: {interface_value_size})")
+                except Exception as e:
+                    error_message = (getattr(e, "msg", None) or str(e)).split("Stacktrace:")[0].strip()
+                    logger().debug(f"Error filling field {field}: {type(e).__name__}: {error_message}")
                     continue
 
         if "disabled" in element.attrs:
