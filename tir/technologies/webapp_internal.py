@@ -3630,7 +3630,9 @@ class WebappInternal(Base):
                             " innerValue: inner && inner.value, innerReadOnly: inner && inner.readOnly,"
                             " innerDisabled: inner && inner.disabled, innerMaxLength: inner && inner.maxLength,"
                             " activeTag: active && active.tagName, activeHostTag: activeHost && activeHost.tagName,"
-                            " activeHostId: activeHost && activeHost.id, isActive: activeHost === el || active === inner};",
+                            " activeHostId: activeHost && activeHost.id, activeHostName: activeHost && activeHost.getAttribute('name'),"
+                            " activeHostValue: activeHost && activeHost.value, activeValue: active && active.value,"
+                            " isActive: activeHost === el || active === inner};",
                             input_field())
                         logger().info(f"Field {field} state: {field_state}")
                 except Exception as e:
