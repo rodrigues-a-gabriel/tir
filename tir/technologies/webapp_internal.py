@@ -3624,8 +3624,13 @@ class WebappInternal(Base):
                         field_state = self.driver.execute_script(
                             "var el = arguments[0], active = document.activeElement;"
                             "while (active && active.shadowRoot && active.shadowRoot.activeElement) { active = active.shadowRoot.activeElement; }"
-                            "return {readOnly: el.readOnly, disabled: el.disabled, tag: el.tagName, id: el.id,"
-                            " activeTag: active && active.tagName, activeId: active && active.id, isActive: active === el};",
+                            "var inner = el.shadowRoot ? el.shadowRoot.querySelector('input, textarea') : null;"
+                            "var root = active && active.getRootNode(), activeHost = root && root.host ? root.host : active;"
+                            "return {tag: el.tagName, id: el.id, value: el.value, readOnly: el.readOnly, disabled: el.disabled,"
+                            " innerValue: inner && inner.value, innerReadOnly: inner && inner.readOnly,"
+                            " innerDisabled: inner && inner.disabled, innerMaxLength: inner && inner.maxLength,"
+                            " activeTag: active && active.tagName, activeHostTag: activeHost && activeHost.tagName,"
+                            " activeHostId: activeHost && activeHost.id, isActive: activeHost === el || active === inner};",
                             input_field())
                         logger().info(f"Field {field} state: {field_state}")
                 except Exception as e:
