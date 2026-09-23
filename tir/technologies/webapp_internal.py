@@ -3621,20 +3621,6 @@ class WebappInternal(Base):
 
                     if not success:
                         logger().info(f"Field {field} value '{current_value}' differs from '{main_value}' (max length: {interface_value_size})")
-                        field_state = self.driver.execute_script(
-                            "var el = arguments[0], active = document.activeElement;"
-                            "while (active && active.shadowRoot && active.shadowRoot.activeElement) { active = active.shadowRoot.activeElement; }"
-                            "var inner = el.shadowRoot ? el.shadowRoot.querySelector('input, textarea') : null;"
-                            "var root = active && active.getRootNode(), activeHost = root && root.host ? root.host : active;"
-                            "return {tag: el.tagName, id: el.id, value: el.value, readOnly: el.readOnly, disabled: el.disabled,"
-                            " innerValue: inner && inner.value, innerReadOnly: inner && inner.readOnly,"
-                            " innerDisabled: inner && inner.disabled, innerMaxLength: inner && inner.maxLength,"
-                            " activeTag: active && active.tagName, activeHostTag: activeHost && activeHost.tagName,"
-                            " activeHostId: activeHost && activeHost.id, activeHostName: activeHost && activeHost.getAttribute('name'),"
-                            " activeHostValue: activeHost && activeHost.value, activeValue: active && active.value,"
-                            " isActive: activeHost === el || active === inner};",
-                            input_field())
-                        logger().info(f"Field {field} state: {field_state}")
                 except Exception as e:
                     error_message = (getattr(e, "msg", None) or str(e)).split("Stacktrace:")[0].strip()
                     logger().info(f"Error filling field {field}: {type(e).__name__}: {error_message}")
