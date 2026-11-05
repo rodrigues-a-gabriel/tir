@@ -33,6 +33,7 @@ WARNING_PT = """
 LOGIN = "<body><wa-text-input name='cGetUser'></wa-text-input></body>"
 OTHER_DIALOG = "<body><wa-dialog><wa-text-view caption='Outro aviso'></wa-text-view></wa-dialog></body>"
 EMPTY = "<body></body>"
+WARNING_OVER_LOGIN = WARNING_EN.replace("<body>", "<body><wa-text-input name='cGetUser'></wa-text-input>")
 
 
 def build_webapp(*doms, language="en-us", poui_login=False):
@@ -59,15 +60,18 @@ class CloseUserFunctionDebugScreenTests(unittest.TestCase):
         self.assertTrue(webapp.close_user_function_debug_screen())
         webapp.SetButton.assert_called_once()
 
-    def test_login_screen_first_does_nothing(self):
-        webapp = build_webapp(LOGIN)
-        self.assertFalse(webapp.close_user_function_debug_screen())
-        webapp.SetButton.assert_not_called()
+    def test_warning_over_login_input_is_closed(self):
+        webapp = build_webapp(LOGIN, WARNING_OVER_LOGIN)
+        self.assertTrue(webapp.close_user_function_debug_screen())
+        webapp.SetButton.assert_called_once()
 
-    def test_other_dialog_is_left_alone(self):
-        webapp = build_webapp(OTHER_DIALOG, LOGIN)
-        self.assertFalse(webapp.close_user_function_debug_screen())
+    def test_no_warning_waits_only_the_timeout(self):
+        webapp = build_webapp(*[OTHER_DIALOG, LOGIN] * 50)
+        clock = iter(range(0, 1000))
+        with mock.patch.object(webapp_internal.time, "time", lambda: next(clock)):
+            self.assertFalse(webapp.close_user_function_debug_screen(timeout=15))
         webapp.SetButton.assert_not_called()
+        self.assertLessEqual(webapp.get_current_DOM.call_count, 15)
 
     def test_poui_login_is_skipped(self):
         webapp = build_webapp(language="en-us", poui_login=True)
