@@ -591,7 +591,7 @@ class WebappInternal(Base):
             self.log_error(message)
             raise ValueError(message)
 
-    def close_user_function_debug_screen(self):
+    def close_user_function_debug_screen(self, timeout=20):
         """
         [Internal]
 
@@ -599,9 +599,12 @@ class WebappInternal(Base):
 
         When the user function debug is enabled in the environment, Protheus opens this
         warning right after the start program/environment screen, before the login screen,
-        and the login screen only shows up after it is closed with "Ok". Waits for
-        whichever comes first: the login screen (nothing to do) or the warning (closes it).
+        and the login screen can only be filled after it is closed with "Ok". The login
+        input may already be in the DOM behind the warning, so the login screen does not
+        end the wait: it looks for the warning until it shows up or ``timeout`` expires.
 
+        :param timeout: Seconds to wait for the warning. - **Default:** 20
+        :type timeout: int
         :return: True if the warning was found and closed.
         :rtype: bool
 
@@ -614,24 +617,18 @@ class WebappInternal(Base):
         if self.config.poui_login:
             return False
 
-        if self.webapp_shadowroot():
-            login_term = "[name=cGetUser], [name=cUser]"
-            dialog_term = "wa-dialog"
-        else:
-            login_term = "[name='cGetUser'] > input, [name=cUser]"
-            dialog_term = ".tmodaldialog, .ui-dialog"
+        dialog_term = "wa-dialog" if self.webapp_shadowroot() else ".tmodaldialog, .ui-dialog"
 
         debug_text = self.normalize_dialog_text(self.language.user_function_debug)
 
-        endtime = time.time() + self.config.time_out
+        logger().info(f"Looking for the user function debug warning (up to {timeout}s)...")
+
+        endtime = time.time() + timeout
         while time.time() < endtime:
             browser_prompts.check_browser_prompts(self.driver)
 
             soup = self.get_current_DOM()
             if soup:
-                if soup.select(login_term):
-                    return False
-
                 if any(debug_text in self.dialog_text(dialog) for dialog in soup.select(dialog_term)):
                     logger().warning("User function debug is active in the environment: closing the warning before the login screen")
                     self.SetButton(self.language.Ok, check_error=False)
@@ -639,6 +636,7 @@ class WebappInternal(Base):
 
             time.sleep(1)
 
+        logger().info("User function debug warning not found")
         return False
 
     def dialog_text(self, dialog):
