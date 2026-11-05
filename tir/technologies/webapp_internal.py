@@ -22,6 +22,7 @@ from tir.technologies.core import base
 from selenium.common.exceptions import *
 from selenium.webdriver.common.by import By
 from tir.technologies.core.base import Base
+from tir.technologies.core import browser_prompts
 from selenium.webdriver.common.keys import Keys
 from tir.technologies.core.log import Log, nump
 from selenium.webdriver.support.ui import Select
@@ -435,6 +436,8 @@ class WebappInternal(Base):
 
         program_screen = []
 
+        browser_prompts.check_browser_prompts(self.driver, force=True)
+
         if not environment:
             environment = self.config.environment
 
@@ -607,6 +610,8 @@ class WebappInternal(Base):
         """
 
         logger().debug('Filling user screen')
+
+        browser_prompts.check_browser_prompts(self.driver, force=True)
 
         user_text = self.config.user_cfg if admin_user and self.config.user_cfg else self.config.user
         password_text = self.config.password_cfg if admin_user and self.config.password_cfg else self.config.password

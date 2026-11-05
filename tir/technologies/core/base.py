@@ -22,6 +22,8 @@ from tir.technologies.core.config import ConfigLoader
 from tir.technologies.core.language import LanguagePack
 from tir.technologies.core.third_party.xpath_soup import xpath_soup
 from tir.technologies.core.utils import Utils
+from tir.technologies.core import browser_prompts
+from tir.technologies.core.browser_prompts import PromptAwareWait
 from selenium.webdriver.firefox.options import Options as FirefoxOpt
 from selenium.webdriver.firefox.service import Service as FirefoxService
 from selenium.webdriver.chrome.options import Options as ChromeOpt
@@ -523,6 +525,8 @@ class Base(unittest.TestCase):
         >>> #Calling the method
         >>> soup = self.get_current_DOM()
         """
+        browser_prompts.check_browser_prompts(self.driver)
+
         try:
 
             self.driver.switch_to.default_content()
@@ -1306,6 +1310,7 @@ class Base(unittest.TestCase):
         logger().info(f'Python Version: {platform.python_version()}')
         logger().info("Starting the browser")
         if self.config.browser.lower() == "firefox":
+            browser_prompts.allow_system_access()
             if sys.platform == 'linux':
                 driver_path = os.path.join(os.path.dirname(__file__), r'drivers/linux64/geckodriver')
             else:
@@ -1380,7 +1385,7 @@ class Base(unittest.TestCase):
             logger().info(f"Browser maximized to {window_size['width']}x{window_size['height']}")
             if window_size and not 768 in range(window_size['height'], window_size['height']+ 40):
                 logger().info(f"Screen size is different from default used in headless mode")
-        self.wait = WebDriverWait(self.driver, self.config.time_out)
+        self.wait = PromptAwareWait(self.driver, self.config.time_out)
         
         Base.driver = self.driver
         Base.wait = self.wait
@@ -1425,7 +1430,7 @@ class Base(unittest.TestCase):
                     time.sleep(3)
                     self.switch_to_iframe()
 
-                WebDriverWait(self.driver, int(wait_timeout)).until(EC.presence_of_element_located((By.CSS_SELECTOR, start_selector)))
+                PromptAwareWait(self.driver, int(wait_timeout)).until(EC.presence_of_element_located((By.CSS_SELECTOR, start_selector)))
                 self.driver.switch_to.default_content()
                 logger().info("Page is ready!")
                 get_url = True
@@ -1456,6 +1461,8 @@ class Base(unittest.TestCase):
             except Exception as e:
                 logger().error(f"Unexpected error while loading '{url}': {e}")
                 break
+
+        browser_prompts.check_browser_prompts(self.driver, force=True)
 
         if not success:
             self.log_error(f"Failed to load page '{url}' within {self.config.time_out}s timeout.")
