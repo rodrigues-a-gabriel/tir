@@ -69,6 +69,7 @@ class LanguagePack:
         self.file_name = languagepack["File Name"]
         self.open = languagepack["Open"]
         self.warning = languagepack["Warning"]
+        self.user_function_debug = languagepack["User Function Debug"]
         self.news = languagepack["News"]
         self.continue_string = languagepack["Continue"]
         self.shortconfirm = languagepack["Short Confirm"]
@@ -188,6 +189,7 @@ class LanguagePack:
             "File Name": "File Name",
             "Open": "Open",
             "Warning": "Warning",
+            "User Function Debug": "USER FUNCTION debug is active",
             "News": "News",
             "Continue": "Continue",
             "Short Confirm": "Confirm",
@@ -303,6 +305,7 @@ class LanguagePack:
             "File Name": "Nome do Arquivo",
 			"Open": "Abrir",
             "Warning": "Atenção",
+            "User Function Debug": "debug da FUNÇÃO DO USUÁRIO está ativo",
             "News": "Novidades do",
             "Continue": "Continuar",
             "Short Confirm": "Confirmar",
@@ -417,6 +420,7 @@ class LanguagePack:
             "File Name": "Nome do Arquivo",
 			"Open": "Abierto",
             "Warning": "Atención",
+            "User Function Debug": "FUNCIÓN DEL USUARIO depurar está activa",
             "News": "Noticias",
             "Continue": "Continuar",
             "Short Confirm": "Confirmar",
@@ -532,6 +536,7 @@ class LanguagePack:
             "Yes": "Да",
             "AssertFalseMessage": "AssertFalse method used without a checkpoint, check the script.",
             "Warning": "Берегись",
+            "User Function Debug": "USER FUNCTION debug is active",
             "News": "Новости",
             "Continue": "Продолжить",
             "Short Confirm": "Подтв.",

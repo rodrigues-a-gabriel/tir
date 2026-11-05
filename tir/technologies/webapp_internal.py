@@ -289,6 +289,8 @@ class WebappInternal(Base):
                     )
 
             if not self.config.sso_login:
+                self.close_user_function_debug_screen()
+
                 self.user_screen(True) if initial_program.lower() == "sigacfg" else self.user_screen()
 
                 endtime = time.time() + self.config.time_out
@@ -588,6 +590,77 @@ class WebappInternal(Base):
             message = f"Couldn't fill '{term}' element."
             self.log_error(message)
             raise ValueError(message)
+
+    def close_user_function_debug_screen(self):
+        """
+        [Internal]
+
+        Closes the "USER FUNCTION debug is active, you will have performance cost." warning.
+
+        When the user function debug is enabled in the environment, Protheus opens this
+        warning right after the start program/environment screen, before the login screen,
+        and the login screen only shows up after it is closed with "Ok". Waits for
+        whichever comes first: the login screen (nothing to do) or the warning (closes it).
+
+        :return: True if the warning was found and closed.
+        :rtype: bool
+
+        Usage:
+
+        >>> # Calling the method
+        >>> self.close_user_function_debug_screen()
+        """
+
+        if self.config.poui_login:
+            return False
+
+        if self.webapp_shadowroot():
+            login_term = "[name=cGetUser], [name=cUser]"
+            dialog_term = "wa-dialog"
+        else:
+            login_term = "[name='cGetUser'] > input, [name=cUser]"
+            dialog_term = ".tmodaldialog, .ui-dialog"
+
+        debug_text = self.normalize_dialog_text(self.language.user_function_debug)
+
+        endtime = time.time() + self.config.time_out
+        while time.time() < endtime:
+            browser_prompts.check_browser_prompts(self.driver)
+
+            soup = self.get_current_DOM()
+            if soup:
+                if soup.select(login_term):
+                    return False
+
+                if any(debug_text in self.dialog_text(dialog) for dialog in soup.select(dialog_term)):
+                    logger().warning("User function debug is active in the environment: closing the warning before the login screen")
+                    self.SetButton(self.language.Ok, check_error=False)
+                    return True
+
+            time.sleep(1)
+
+        return False
+
+    def dialog_text(self, dialog):
+        """
+        [Internal]
+
+        Returns the normalized text of a dialog (BeautifulSoup), including its attributes:
+        with shadow root the texts are in the ``caption`` attribute of the components.
+        """
+        parts = [dialog.get_text(" ")]
+        for element in [dialog, *dialog.find_all(True)]:
+            parts.extend(value for value in element.attrs.values() if isinstance(value, str))
+        return self.normalize_dialog_text(" ".join(parts))
+
+    @staticmethod
+    def normalize_dialog_text(text):
+        """
+        [Internal]
+
+        Lowercases the text and collapses its whitespace (and ``<br>`` tags) for comparison.
+        """
+        return " ".join(re.sub(r"<[^>]*>", " ", text or "").split()).lower()
 
     def user_screen(self, admin_user=False):
         """
