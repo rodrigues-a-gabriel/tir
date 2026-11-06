@@ -73,10 +73,10 @@ class CloseUserFunctionDebugScreenTests(unittest.TestCase):
         webapp.SetButton.assert_not_called()
         self.assertLessEqual(webapp.get_current_DOM.call_count, 15)
 
-    def test_poui_login_is_skipped(self):
-        webapp = build_webapp(language="en-us", poui_login=True)
-        self.assertFalse(webapp.close_user_function_debug_screen())
-        webapp.get_current_DOM.assert_not_called()
+    def test_closes_warning_with_poui_login(self):
+        webapp = build_webapp(WARNING_EN, poui_login=True)
+        self.assertTrue(webapp.close_user_function_debug_screen())
+        webapp.SetButton.assert_called_once()
 
     def test_every_language_has_the_text(self):
         for language in ("en-us", "pt-br", "es-es", "ru-ru"):
