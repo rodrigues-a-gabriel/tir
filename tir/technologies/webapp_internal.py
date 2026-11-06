@@ -614,14 +614,12 @@ class WebappInternal(Base):
         >>> self.close_user_function_debug_screen()
         """
 
-        if self.config.poui_login:
-            return False
+        logger().info(f"Looking for the user function debug warning (up to {timeout}s)...")
 
+        # The warning is a webapp dialog: it also shows up before the PO UI login.
         dialog_term = "wa-dialog" if self.webapp_shadowroot() else ".tmodaldialog, .ui-dialog"
 
         debug_text = self.normalize_dialog_text(self.language.user_function_debug)
-
-        logger().info(f"Looking for the user function debug warning (up to {timeout}s)...")
 
         endtime = time.time() + timeout
         while time.time() < endtime:
