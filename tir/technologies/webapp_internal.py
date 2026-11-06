@@ -603,7 +603,8 @@ class WebappInternal(Base):
         input may already be in the DOM behind the warning, so the login screen does not
         end the wait: it looks for the warning until it shows up or ``timeout`` expires.
 
-        The text is searched in the dialogs of the page source and, since the page source
+        The text comes from the ``Language`` tag of config.json (the page language when the
+        tag is empty). It is searched in the dialogs of the page source and, since the page source
         does not include the content of shadow roots, also in the whole page through
         JavaScript (shadow roots and same-origin iframes included).
 
@@ -618,10 +619,11 @@ class WebappInternal(Base):
         >>> self.close_user_function_debug_screen()
         """
 
-        debug_text = self.normalize_dialog_text(self.language.user_function_debug)
+        language = self.config.json_data.get("Language") or self.config.language
+        debug_text = self.normalize_dialog_text(LanguagePack(language).user_function_debug)
         dialog_term = "wa-dialog, wa-message-box, .tmodaldialog, .ui-dialog, [role=dialog]"
 
-        logger().info(f'Looking for the user function debug warning (up to {timeout}s): text "{debug_text}" in "{dialog_term}" and in the whole page')
+        logger().info(f'Looking for the user function debug warning (up to {timeout}s): text "{debug_text}" (Language "{language}") in "{dialog_term}" and in the whole page')
 
         seen_dialogs = []
         endtime = time.time() + timeout

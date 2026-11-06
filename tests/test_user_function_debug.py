@@ -38,8 +38,9 @@ WARNING_OVER_LOGIN = WARNING_EN.replace("<body>", "<body><wa-text-input name='cG
 
 def build_webapp(*doms, language="en-us", poui_login=False):
     webapp = WebappInternal.__new__(WebappInternal)
-    webapp.config = SimpleNamespace(time_out=30, poui_login=poui_login)
-    webapp.language = LanguagePack(language)
+    webapp.config = SimpleNamespace(time_out=30, poui_login=poui_login, language="pt-br",
+                                    json_data={"Language": language})
+    webapp.language = LanguagePack("pt-br")
     webapp.driver = None
     webapp.webapp_shadowroot = mock.Mock(return_value=True)
     webapp.get_current_DOM = mock.Mock(side_effect=[BeautifulSoup(d, "html.parser") for d in doms])
@@ -97,6 +98,21 @@ class CloseUserFunctionDebugScreenTests(unittest.TestCase):
         self.assertIn("outro aviso", messages[1])
         self.assertEqual(sum("Dialogs on screen" in m for m in messages), 2)
         self.assertIn("not found", messages[-1])
+
+    def test_text_comes_from_config_json_language(self):
+        webapp = build_webapp(WARNING_EN, language="en-us")
+        self.assertTrue(webapp.close_user_function_debug_screen())
+        webapp.SetButton.assert_called_once()
+
+        webapp = build_webapp(WARNING_EN, language="pt-br")
+        webapp.find_text_in_page = mock.Mock(return_value=None)
+        self.assertFalse(webapp.close_user_function_debug_screen(timeout=0))
+        webapp.SetButton.assert_not_called()
+
+    def test_empty_language_tag_falls_back_to_page_language(self):
+        webapp = build_webapp(WARNING_EN, language="")
+        webapp.config.language = "en-us"
+        self.assertTrue(webapp.close_user_function_debug_screen())
 
     def test_every_language_has_the_text(self):
         for language in ("en-us", "pt-br", "es-es", "ru-ru"):
