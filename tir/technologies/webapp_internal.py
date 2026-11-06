@@ -289,7 +289,7 @@ class WebappInternal(Base):
                     )
 
             if not self.config.sso_login:
-                self.close_user_function_debug_screen()
+                self.check_environment_entry()
 
                 self.user_screen(True) if initial_program.lower() == "sigacfg" else self.user_screen()
 
@@ -591,114 +591,183 @@ class WebappInternal(Base):
             self.log_error(message)
             raise ValueError(message)
 
-    def close_user_function_debug_screen(self, timeout=60):
+    # Messages (lowercase, part of the text) that Protheus shows instead of the login screen
+    # when it can't enter the environment set on the start program screen.
+    ENVIRONMENT_ERROR_TERMS = (
+        "startpath",  # "Invalid setting. Verify STARTPATH variable in your environment option or verify if your file settings (.ini) is corrupted"
+    )
+
+    def check_environment_entry(self, timeout=60):
         """
         [Internal]
 
-        Closes the "USER FUNCTION debug is active, you will have performance cost." warning.
+        Checks the screen right after the start program/environment screen, before the login.
 
-        When the user function debug is enabled in the environment, Protheus opens this
-        warning right after the start program/environment screen, before the login screen,
-        and the login screen can only be filled after it is closed with "Ok". The login
-        input may already be in the DOM behind the warning, so the login screen does not
-        end the wait: it looks for the warning until it shows up or ``timeout`` expires.
+        - Environment errors (``ENVIRONMENT_ERROR_TERMS``, e.g. "Invalid setting. Verify
+          STARTPATH variable..."): the environment can't be entered, so the test fails right
+          away with the Protheus message, instead of waiting for the login screen until the
+          timeout and failing with "Couldn't fill User input element".
+        - The "USER FUNCTION debug is active, you will have performance cost." warning, which
+          blocks the login screen until it is closed with "Ok": it is closed.
 
-        The text comes from the ``Language`` tag of config.json (the page language when the
-        tag is empty). It is searched in the dialogs of the page source and, since the page source
-        does not include the content of shadow roots, also in the whole page through
-        JavaScript (shadow roots and same-origin iframes included).
+        The login input may already be in the DOM behind these messages, so the login screen
+        does not end the wait: it looks for them until one shows up or ``timeout`` expires.
 
-        :param timeout: Seconds to wait for the warning. - **Default:** 60
+        The warning text comes from the ``Language`` tag of config.json (the page language when
+        the tag is empty). The texts are searched in the browser alert, in the dialogs of the
+        page source and, since the page source does not include the content of shadow roots,
+        in the whole page through JavaScript (shadow roots and same-origin iframes included).
+
+        :param timeout: Seconds to wait for the messages. - **Default:** 60
         :type timeout: int
-        :return: True if the warning was found and closed.
+        :return: True if the user function debug warning was found and closed.
         :rtype: bool
+        :raises ValueError: If an environment error is found.
 
         Usage:
 
         >>> # Calling the method
-        >>> self.close_user_function_debug_screen()
+        >>> self.check_environment_entry()
         """
 
         language = self.config.json_data.get("Language") or self.config.language
         debug_text = self.normalize_dialog_text(LanguagePack(language).user_function_debug)
+        error_terms = [self.normalize_dialog_text(term) for term in self.ENVIRONMENT_ERROR_TERMS]
         dialog_term = "wa-dialog, wa-message-box, .tmodaldialog, .ui-dialog, [role=dialog]"
 
-        logger().info(f'Looking for the user function debug warning (up to {timeout}s): text "{debug_text}" (Language "{language}") in "{dialog_term}" and in the whole page')
+        logger().info(f'Checking the environment entry (up to {timeout}s): environment errors {error_terms} and user function debug warning "{debug_text}" (Language "{language}") in the alert, in "{dialog_term}" and in the whole page')
 
         seen_dialogs = []
         endtime = time.time() + timeout
         while time.time() < endtime:
             browser_prompts.check_browser_prompts(self.driver)
 
-            found = None
+            alert_text = self.alert_text()
+            if alert_text and self.has_any_term(alert_text, error_terms):
+                self.environment_entry_error(alert_text)
+
+            debug_found = None
             soup = self.get_current_DOM()
             if soup:
-                dialogs = [self.dialog_text(dialog)[:150] for dialog in soup.select(dialog_term)]
+                dialogs = [self.dialog_text(dialog, lower=False)[:300] for dialog in soup.select(dialog_term)]
                 if dialogs != seen_dialogs:
                     seen_dialogs = dialogs
                     logger().info(f"Dialogs on screen: {dialogs if dialogs else 'none'}")
 
-                if any(debug_text in dialog for dialog in dialogs):
-                    found = "page source dialog"
+                for dialog in dialogs:
+                    if self.has_any_term(dialog, error_terms):
+                        self.environment_entry_error(dialog)
+                    if debug_text in dialog.lower():
+                        debug_found = "page source dialog"
 
-            if not found:
-                found = self.find_text_in_page(debug_text)
+            if not debug_found:
+                found = self.find_text_in_page([*error_terms, debug_text])
+                if found and found.get("needle") in error_terms:
+                    self.environment_entry_error(found.get("text") or found.get("needle"))
+                if found:
+                    debug_found = found.get("where")
 
-            if found:
-                logger().warning(f"User function debug is active in the environment ({found}): closing the warning before the login screen")
+            if debug_found:
+                logger().warning(f"User function debug is active in the environment ({debug_found}): closing the warning before the login screen")
                 self.SetButton(self.language.Ok, check_error=False)
                 return True
 
             time.sleep(1)
 
-        logger().info(f"User function debug warning not found. Last dialogs on screen: {seen_dialogs if seen_dialogs else 'none'}")
+        logger().info(f"No environment error nor user function debug warning found. Last dialogs on screen: {seen_dialogs if seen_dialogs else 'none'}")
         return False
 
-    def find_text_in_page(self, text):
+    def environment_entry_error(self, text):
         """
         [Internal]
 
-        Looks for ``text`` (already normalized) in the whole page through JavaScript, including
-        the content of shadow roots and same-origin iframes, which the page source does not have.
+        Fails the test because the environment could not be entered, with the Protheus message.
+        It is a configuration error, so there is no point in restarting and trying again.
 
-        :return: A short description of where the text was found, or None.
-        :rtype: str
+        :raises ValueError: Always.
+        """
+        message = f"Couldn't enter the environment: {' '.join(str(text).split())}"
+        self.log_error(message, restart_counter_param=3)
+        raise ValueError(message)
+
+    def alert_text(self):
+        """
+        [Internal]
+
+        Returns the text of the open browser alert, or None.
+        """
+        try:
+            return self.driver.switch_to.alert.text
+        except Exception:
+            return None
+
+    @classmethod
+    def has_any_term(cls, text, terms):
+        """
+        [Internal]
+
+        True if the text, normalized, contains any of the (normalized) terms.
+        """
+        normalized = cls.normalize_dialog_text(text)
+        return any(term in normalized for term in terms)
+
+    def find_text_in_page(self, needles):
+        """
+        [Internal]
+
+        Looks for the ``needles`` (already normalized, in order) in the whole page through
+        JavaScript, including the content of shadow roots and same-origin iframes, which the
+        page source does not have.
+
+        :return: ``{"needle", "where", "text"}`` of the first needle found - where it was found
+            and the text of the element that has it -, or None.
+        :rtype: dict
         """
         script = r"""
-        const needle = arguments[0];
-        const norm = (value) => String(value || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").toLowerCase();
-        const visited = new Set();
-        const search = (root, where) => {
+        const needles = arguments[0];
+        const clean = (value) => String(value || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+        const norm = (value) => clean(value).toLowerCase();
+        const search = (needle, root, where, visited) => {
             if (!root || visited.has(root)) return null;
             visited.add(root);
-            if (norm(root.textContent).includes(needle)) return where;
-            for (const element of root.querySelectorAll("*")) {
+            const elements = Array.from(root.querySelectorAll("*"));
+            if (norm(root.textContent).includes(needle)) {
+                const deepest = elements.filter((element) => norm(element.textContent).includes(needle)).pop();
+                return { needle, where, text: clean(deepest ? deepest.textContent : root.textContent).slice(0, 500) };
+            }
+            for (const element of elements) {
                 for (const attribute of element.attributes) {
-                    if (norm(attribute.value).includes(needle)) return `${where} <${element.localName}> ${attribute.name}`;
+                    if (norm(attribute.value).includes(needle)) {
+                        return { needle, where: `${where} <${element.localName}> ${attribute.name}`, text: clean(attribute.value).slice(0, 500) };
+                    }
                 }
                 if (element.shadowRoot) {
-                    const found = search(element.shadowRoot, `${where} <${element.localName}> shadow root`);
+                    const found = search(needle, element.shadowRoot, `${where} <${element.localName}> shadow root`, visited);
                     if (found) return found;
                 }
                 if (element.localName === "iframe") {
                     let doc = null;
                     try { doc = element.contentDocument; } catch (e) {}
-                    const found = search(doc, `${where} iframe`);
+                    const found = search(needle, doc, `${where} iframe`, visited);
                     if (found) return found;
                 }
             }
             return null;
         };
-        return search(document, "page");
+        for (const needle of needles) {
+            const found = search(needle, document, "page", new Set());
+            if (found) return found;
+        }
+        return null;
         """
         try:
             self.driver.switch_to.default_content()
-            return self.driver.execute_script(script, text)
+            return self.driver.execute_script(script, list(needles))
         except Exception as e:
             logger().debug(f"find_text_in_page exception: {e}")
             return None
 
-    def dialog_text(self, dialog):
+    def dialog_text(self, dialog, lower=True):
         """
         [Internal]
 
@@ -708,16 +777,17 @@ class WebappInternal(Base):
         parts = [dialog.get_text(" ")]
         for element in [dialog, *dialog.find_all(True)]:
             parts.extend(value for value in element.attrs.values() if isinstance(value, str))
-        return self.normalize_dialog_text(" ".join(parts))
+        return self.normalize_dialog_text(" ".join(parts), lower=lower)
 
     @staticmethod
-    def normalize_dialog_text(text):
+    def normalize_dialog_text(text, lower=True):
         """
         [Internal]
 
-        Lowercases the text and collapses its whitespace (and ``<br>`` tags) for comparison.
+        Collapses the whitespace (and ``<br>`` tags) of the text and lowercases it for comparison.
         """
-        return " ".join(re.sub(r"<[^>]*>", " ", text or "").split()).lower()
+        text = " ".join(re.sub(r"<[^>]*>", " ", text or "").split())
+        return text.lower() if lower else text
 
     def user_screen(self, admin_user=False):
         """
