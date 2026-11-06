@@ -78,6 +78,26 @@ class CloseUserFunctionDebugScreenTests(unittest.TestCase):
         self.assertTrue(webapp.close_user_function_debug_screen())
         webapp.SetButton.assert_called_once()
 
+    def test_warning_only_inside_shadow_root_is_found_by_javascript(self):
+        webapp = build_webapp(EMPTY)
+        webapp.find_text_in_page = mock.Mock(return_value="page <wa-message-box> shadow root")
+        self.assertTrue(webapp.close_user_function_debug_screen())
+        webapp.find_text_in_page.assert_called_once_with("user function debug is active")
+        webapp.SetButton.assert_called_once()
+
+    def test_logs_what_it_looks_for_and_dialogs_seen(self):
+        webapp = build_webapp(OTHER_DIALOG, OTHER_DIALOG, LOGIN)
+        clock = iter(range(0, 1000))
+        log = webapp_internal.logger.return_value
+        log.reset_mock()
+        with mock.patch.object(webapp_internal.time, "time", lambda: next(clock)):
+            self.assertFalse(webapp.close_user_function_debug_screen(timeout=4))
+        messages = [call.args[0] for call in log.info.call_args_list]
+        self.assertIn("user function debug is active", messages[0])
+        self.assertIn("outro aviso", messages[1])
+        self.assertEqual(sum("Dialogs on screen" in m for m in messages), 2)
+        self.assertIn("not found", messages[-1])
+
     def test_every_language_has_the_text(self):
         for language in ("en-us", "pt-br", "es-es", "ru-ru"):
             self.assertTrue(LanguagePack(language).user_function_debug)

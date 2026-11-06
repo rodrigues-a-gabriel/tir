@@ -591,7 +591,7 @@ class WebappInternal(Base):
             self.log_error(message)
             raise ValueError(message)
 
-    def close_user_function_debug_screen(self, timeout=20):
+    def close_user_function_debug_screen(self, timeout=60):
         """
         [Internal]
 
@@ -603,7 +603,11 @@ class WebappInternal(Base):
         input may already be in the DOM behind the warning, so the login screen does not
         end the wait: it looks for the warning until it shows up or ``timeout`` expires.
 
-        :param timeout: Seconds to wait for the warning. - **Default:** 20
+        The text is searched in the dialogs of the page source and, since the page source
+        does not include the content of shadow roots, also in the whole page through
+        JavaScript (shadow roots and same-origin iframes included).
+
+        :param timeout: Seconds to wait for the warning. - **Default:** 60
         :type timeout: int
         :return: True if the warning was found and closed.
         :rtype: bool
@@ -614,28 +618,83 @@ class WebappInternal(Base):
         >>> self.close_user_function_debug_screen()
         """
 
-        logger().info(f"Looking for the user function debug warning (up to {timeout}s)...")
-
-        # The warning is a webapp dialog: it also shows up before the PO UI login.
-        dialog_term = "wa-dialog" if self.webapp_shadowroot() else ".tmodaldialog, .ui-dialog"
-
         debug_text = self.normalize_dialog_text(self.language.user_function_debug)
+        dialog_term = "wa-dialog, wa-message-box, .tmodaldialog, .ui-dialog, [role=dialog]"
 
+        logger().info(f'Looking for the user function debug warning (up to {timeout}s): text "{debug_text}" in "{dialog_term}" and in the whole page')
+
+        seen_dialogs = []
         endtime = time.time() + timeout
         while time.time() < endtime:
             browser_prompts.check_browser_prompts(self.driver)
 
+            found = None
             soup = self.get_current_DOM()
             if soup:
-                if any(debug_text in self.dialog_text(dialog) for dialog in soup.select(dialog_term)):
-                    logger().warning("User function debug is active in the environment: closing the warning before the login screen")
-                    self.SetButton(self.language.Ok, check_error=False)
-                    return True
+                dialogs = [self.dialog_text(dialog)[:150] for dialog in soup.select(dialog_term)]
+                if dialogs != seen_dialogs:
+                    seen_dialogs = dialogs
+                    logger().info(f"Dialogs on screen: {dialogs if dialogs else 'none'}")
+
+                if any(debug_text in dialog for dialog in dialogs):
+                    found = "page source dialog"
+
+            if not found:
+                found = self.find_text_in_page(debug_text)
+
+            if found:
+                logger().warning(f"User function debug is active in the environment ({found}): closing the warning before the login screen")
+                self.SetButton(self.language.Ok, check_error=False)
+                return True
 
             time.sleep(1)
 
-        logger().info("User function debug warning not found")
+        logger().info(f"User function debug warning not found. Last dialogs on screen: {seen_dialogs if seen_dialogs else 'none'}")
         return False
+
+    def find_text_in_page(self, text):
+        """
+        [Internal]
+
+        Looks for ``text`` (already normalized) in the whole page through JavaScript, including
+        the content of shadow roots and same-origin iframes, which the page source does not have.
+
+        :return: A short description of where the text was found, or None.
+        :rtype: str
+        """
+        script = r"""
+        const needle = arguments[0];
+        const norm = (value) => String(value || "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").toLowerCase();
+        const visited = new Set();
+        const search = (root, where) => {
+            if (!root || visited.has(root)) return null;
+            visited.add(root);
+            if (norm(root.textContent).includes(needle)) return where;
+            for (const element of root.querySelectorAll("*")) {
+                for (const attribute of element.attributes) {
+                    if (norm(attribute.value).includes(needle)) return `${where} <${element.localName}> ${attribute.name}`;
+                }
+                if (element.shadowRoot) {
+                    const found = search(element.shadowRoot, `${where} <${element.localName}> shadow root`);
+                    if (found) return found;
+                }
+                if (element.localName === "iframe") {
+                    let doc = null;
+                    try { doc = element.contentDocument; } catch (e) {}
+                    const found = search(doc, `${where} iframe`);
+                    if (found) return found;
+                }
+            }
+            return null;
+        };
+        return search(document, "page");
+        """
+        try:
+            self.driver.switch_to.default_content()
+            return self.driver.execute_script(script, text)
+        except Exception as e:
+            logger().debug(f"find_text_in_page exception: {e}")
+            return None
 
     def dialog_text(self, dialog):
         """
